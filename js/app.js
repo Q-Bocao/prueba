@@ -1,7 +1,9 @@
-// Q'bocao — Catálogo desde API + caché local + skeletons + carrito interactivo
+// Q'bocao — Catálogo desde API con caché por 'updated', timeout y render progresivo + carrito
 
 const ORIGIN = { lat: 34.6335848, lng: -58.5979308 };
+const MENU_API_URL = window.MENU_API_URL;
 
+// ======= UI =======
 const els = {
   cartPanel: document.getElementById('cartPanel'),
   backdrop: document.getElementById('backdrop'),
@@ -27,7 +29,7 @@ openMenuBtn?.addEventListener('click', () => {
   menu.style.display = visible ? 'none' : 'flex';
 });
 
-// ======== Carrito ========
+// ======= Carrito =======
 const state = { items: [] }; // {id,name,price,qty}
 const money = n => `$${(n||0).toLocaleString('es-AR')}`;
 
@@ -71,50 +73,61 @@ els.cartBody?.addEventListener('click', ev=>{
   updateCartSummary();
 });
 
-// ======== Catálogo (API + caché local 5 min) ========
-const MENU_API_URL = window.MENU_API_URL;
-const CACHE_KEY = 'qbocao_catalog_v1';
-const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutos
+// ======= Catálogo: caché por 'updated', timeout y render progresivo =======
+const CACHE_KEY = 'qbocao_catalog_v2'; // incluye 'updated'
+const CACHE_TTL_MS = 5 * 60 * 1000;     // 5 minutos
+const FIRST_CHUNK = 8;                  // primeras tarjetas inmediatas
+const NEXT_CHUNK = 12;                  // tamaño de cada lote posterior
 
 document.addEventListener('DOMContentLoaded', async ()=>{
-  // 1) mostrar instantáneo desde cache si existe y es reciente
   const cached = getCache();
-  if(cached){ renderCatalog(cached); }
-  // 2) de fondo, pedir a la API y actualizar si hay cambios
-  const fresh = await fetchCatalog();
-  if(fresh){ renderCatalog(fresh); setCache(fresh); }
+  if (cached?.items?.length) renderCatalogProgressive(cached.items);
+
+  const fresh = await fetchCatalogWithTimeout(4500); // 4.5s timeout
+  if (fresh && fresh.items?.length) {
+    // si 'updated' no cambió, evitamos re-render innecesario
+    if (!cached || cached.updated !== fresh.updated) {
+      renderCatalogProgressive(fresh.items);
+      setCache(fresh.updated, fresh.items);
+    }
+  }
 });
 
 function getCache(){
   try{
     const raw = localStorage.getItem(CACHE_KEY);
     if(!raw) return null;
-    const {ts, items} = JSON.parse(raw);
-    if(Date.now()-ts > CACHE_TTL_MS) return null;
-    return items;
+    const obj = JSON.parse(raw);
+    if(Date.now()-obj.ts > CACHE_TTL_MS) return null;
+    return obj;
   }catch(_){ return null; }
 }
-function setCache(items){
-  try{ localStorage.setItem(CACHE_KEY, JSON.stringify({ts:Date.now(), items})); }catch(_){}
+function setCache(updated, items){
+  try{ localStorage.setItem(CACHE_KEY, JSON.stringify({ts:Date.now(), updated, items})); }catch(_){}
 }
 
-async function fetchCatalog(){
+async function fetchCatalogWithTimeout(ms){
   if(!MENU_API_URL) return null;
+  const ctrl = new AbortController();
+  const t = setTimeout(()=>ctrl.abort(), ms);
   try{
-    const res = await fetch(MENU_API_URL); // permitir cache del navegador
+    const res = await fetch(MENU_API_URL, { signal: ctrl.signal });
     const raw = await res.text();
+    clearTimeout(t);
     let data; try{ data = JSON.parse(raw); } catch(e){ console.error('API no-JSON', raw); return null; }
     if(!data || !Array.isArray(data.productos)) { console.error('JSON inesperado', data); return null; }
-
     let items = data.productos.map(normalizeFromAPI).filter(x=>x.nombre);
     const disponibles = items.filter(i=>i.activo);
     const agotados = items.filter(i=>!i.activo);
-    return [...disponibles, ...agotados];
-  }catch(e){ console.error('fetchCatalog error', e); return null; }
+    items = [...disponibles, ...agotados];
+    return { updated: String(data.updated||''), items };
+  }catch(e){
+    console.warn('fetchCatalog timeout/err', e);
+    return null;
+  }
 }
 
 function normalizeFromAPI(row){
-  // disponible puede venir true/false, "true"/"SI"/"Sí"
   const disp = (row.disponible===true) || String(row.disponible).toUpperCase()==='SI' || String(row.disponible).toLowerCase()==='true';
   const agot = (row.agotado===true) || String(row.agotado).toLowerCase()==='true';
   const activo = disp && !agot;
@@ -128,19 +141,20 @@ function normalizeFromAPI(row){
   };
 }
 
-function renderCatalog(items){
-  // si había skeletons, los reemplazamos
+// Render en dos etapas: primeras N inmediatamente, el resto en lotes
+function renderCatalogProgressive(items){
   const logoFallback = 'assets/images/logo.png';
-  els.grid.innerHTML = items.map(it=>{
+  const makeCard = (it, i) => {
     const agotado = !it.activo;
     const badge = agotado ? `<span class="badge-out">AGOTADO</span>` : '';
     const disabled = agotado ? 'disabled' : '';
     const imgSrc = it.foto ? `assets/images/postres/${it.foto}` : logoFallback;
+    const eager = i < 6 ? 'fetchpriority="high" loading="eager"' : 'loading="lazy"';
     return `
       <article class="card">
         <figure class="figure">
           <img class="thumb" src="${imgSrc}" alt="${escapeHtml(it.nombre)}"
-               loading="lazy" onerror="this.src='${logoFallback}'" />
+               ${eager} onerror="this.src='${logoFallback}'" />
           ${badge}
         </figure>
         <div class="body">
@@ -156,7 +170,28 @@ function renderCatalog(items){
         </div>
       </article>
     `;
-  }).join('');
+  };
+
+  // Limpia skeletons y renderiza primeras
+  els.grid.innerHTML = items.slice(0, FIRST_CHUNK).map(makeCard).join('');
+
+  // Resto en lotes para no bloquear el hilo
+  let i = FIRST_CHUNK;
+  const renderNext = () => {
+    if (i >= items.length) return;
+    const next = items.slice(i, i + NEXT_CHUNK).map((it, idx) => makeCard(it, i + idx)).join('');
+    const frag = document.createElement('template');
+    frag.innerHTML = next;
+    els.grid.appendChild(frag.content);
+    i += NEXT_CHUNK;
+    // Dejar respirar el main thread
+    if ('requestIdleCallback' in window) {
+      requestIdleCallback(renderNext, { timeout: 200 });
+    } else {
+      setTimeout(renderNext, 16);
+    }
+  };
+  renderNext();
 }
 
 // Click en “Agregar”
@@ -173,5 +208,3 @@ els.grid?.addEventListener('click', ev=>{
 });
 
 function escapeHtml(s=''){ return s.replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m])); }
-
-// (El cálculo de envío por km y el formulario van en el siguiente bloque)
