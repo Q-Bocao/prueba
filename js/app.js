@@ -1,7 +1,8 @@
-// Q'bocao — Catálogo desde API con caché por 'updated', timeout y render progresivo + carrito
+// Q'bocao — Catálogo rápido + Carrito + Formulario con CP → costo envío + WhatsApp
 
 const ORIGIN = { lat: 34.6335848, lng: -58.5979308 };
 const MENU_API_URL = window.MENU_API_URL;
+const WHATS_NUMBER = window.WHATS_NUMBER || '+5491154815519';
 
 // ======= UI =======
 const els = {
@@ -10,12 +11,40 @@ const els = {
   openCart: document.getElementById('openCart'),
   closeCart: document.querySelector('#cartPanel .cart-close'),
   grid: document.getElementById('gridCatalogo'),
-  cartBody: document.querySelector('.cart-body'),
-  subtotalEl: document.querySelector('.cart-footer .cart-row strong'),
-  continueBtn: document.querySelector('.cart-footer .btn-primary'),
+
+  // carrito
+  cartBody: document.getElementById('stepCart'),
+  subtotalEl: document.getElementById('subtotalTxt'),
+  continueBtn: document.getElementById('btnToForm'),
+  panelTitle: document.getElementById('panelTitle'),
+  footerCart: document.getElementById('footerCart'),
+
+  // form
+  stepForm: document.getElementById('stepForm'),
+  orderForm: document.getElementById('orderForm'),
+  backBtn: document.getElementById('btnBack'),
+  fNombre: document.getElementById('fNombre'),
+  fApellido: document.getElementById('fApellido'),
+  fTelefono: document.getElementById('fTelefono'),
+  fRetiro: document.getElementById('fRetiro'),
+  direccionBlock: document.getElementById('direccionBlock'),
+  fCalle: document.getElementById('fCalle'),
+  fCP: document.getElementById('fCP'),
+  fTipo: document.getElementById('fTipo'),
+  deptoExtra: document.getElementById('deptoExtra'),
+  fPiso: document.getElementById('fPiso'),
+  fDepto: document.getElementById('fDepto'),
+  fPago: document.getElementById('fPago'),
+  transferBlock: document.getElementById('transferBlock'),
+  copyStatus: document.getElementById('copyStatus'),
+  rSubtotal: document.getElementById('rSubtotal'),
+  rEnvio: document.getElementById('rEnvio'),
+  rTotal: document.getElementById('rTotal')
 };
+
 function openCart(){ els.cartPanel.setAttribute('aria-hidden','false'); els.backdrop.setAttribute('aria-hidden','false'); document.body.style.overflow='hidden'; }
 function closeCart(){ els.cartPanel.setAttribute('aria-hidden','true'); els.backdrop.setAttribute('aria-hidden','true'); document.body.style.overflow=''; }
+
 els.openCart?.addEventListener('click', openCart);
 els.closeCart?.addEventListener('click', closeCart);
 els.backdrop?.addEventListener('click', closeCart);
@@ -30,7 +59,7 @@ openMenuBtn?.addEventListener('click', () => {
 });
 
 // ======= Carrito =======
-const state = { items: [] }; // {id,name,price,qty}
+const state = { items: [], shipping: 0 };
 const money = n => `$${(n||0).toLocaleString('es-AR')}`;
 
 function updateCartSummary(){
@@ -73,23 +102,38 @@ els.cartBody?.addEventListener('click', ev=>{
   updateCartSummary();
 });
 
-// ======= Catálogo: caché por 'updated', timeout y render progresivo =======
-const CACHE_KEY = 'qbocao_catalog_v2'; // incluye 'updated'
-const CACHE_TTL_MS = 5 * 60 * 1000;     // 5 minutos
-const FIRST_CHUNK = 8;                  // primeras tarjetas inmediatas
-const NEXT_CHUNK = 12;                  // tamaño de cada lote posterior
+// Ir al formulario
+els.continueBtn?.addEventListener('click', ()=>{
+  els.panelTitle.textContent = 'Completar datos';
+  els.cartBody.hidden = true;
+  els.footerCart.hidden = true;
+  els.stepForm.hidden = false;
+  // setear resumen
+  const subtotal = state.items.reduce((a,it)=>a+it.price*it.qty,0);
+  els.rSubtotal.textContent = money(subtotal);
+  calcShipping(); // inicializa envío (puede ser 0 si no hay CP)
+  updateTotals();
+});
+
+// Volver al carrito
+els.backBtn?.addEventListener('click', ()=>{
+  els.panelTitle.textContent = 'Tu pedido';
+  els.stepForm.hidden = true;
+  els.cartBody.hidden = false;
+  els.footerCart.hidden = false;
+});
+
+// ======= Catálogo (con caché) =======
+const CACHE_KEY = 'qbocao_catalog_v3';
+const CACHE_TTL_MS = 5 * 60 * 1000;
 
 document.addEventListener('DOMContentLoaded', async ()=>{
   const cached = getCache();
-  if (cached?.items?.length) renderCatalogProgressive(cached.items);
-
-  const fresh = await fetchCatalogWithTimeout(4500); // 4.5s timeout
-  if (fresh && fresh.items?.length) {
-    // si 'updated' no cambió, evitamos re-render innecesario
-    if (!cached || cached.updated !== fresh.updated) {
-      renderCatalogProgressive(fresh.items);
-      setCache(fresh.updated, fresh.items);
-    }
+  if (cached?.items?.length) renderCatalog(cached.items, true);
+  const fresh = await fetchCatalog();
+  if (fresh && (!cached || cached.updated !== fresh.updated)) {
+    renderCatalog(fresh.items, false);
+    setCache(fresh.updated, fresh.items);
   }
 });
 
@@ -106,14 +150,11 @@ function setCache(updated, items){
   try{ localStorage.setItem(CACHE_KEY, JSON.stringify({ts:Date.now(), updated, items})); }catch(_){}
 }
 
-async function fetchCatalogWithTimeout(ms){
+async function fetchCatalog(){
   if(!MENU_API_URL) return null;
-  const ctrl = new AbortController();
-  const t = setTimeout(()=>ctrl.abort(), ms);
   try{
-    const res = await fetch(MENU_API_URL, { signal: ctrl.signal });
+    const res = await fetch(MENU_API_URL);
     const raw = await res.text();
-    clearTimeout(t);
     let data; try{ data = JSON.parse(raw); } catch(e){ console.error('API no-JSON', raw); return null; }
     if(!data || !Array.isArray(data.productos)) { console.error('JSON inesperado', data); return null; }
     let items = data.productos.map(normalizeFromAPI).filter(x=>x.nombre);
@@ -121,10 +162,7 @@ async function fetchCatalogWithTimeout(ms){
     const agotados = items.filter(i=>!i.activo);
     items = [...disponibles, ...agotados];
     return { updated: String(data.updated||''), items };
-  }catch(e){
-    console.warn('fetchCatalog timeout/err', e);
-    return null;
-  }
+  }catch(e){ console.warn('fetchCatalog err', e); return null; }
 }
 
 function normalizeFromAPI(row){
@@ -141,20 +179,18 @@ function normalizeFromAPI(row){
   };
 }
 
-// Render en dos etapas: primeras N inmediatamente, el resto en lotes
-function renderCatalogProgressive(items){
+function renderCatalog(items){
   const logoFallback = 'assets/images/logo.png';
-  const makeCard = (it, i) => {
+  els.grid.innerHTML = items.map(it=>{
     const agotado = !it.activo;
-    const badge = agotado ? `<span class="badge-out">AGOTADO</span>` : '';
     const disabled = agotado ? 'disabled' : '';
+    const badge = agotado ? `<span class="badge-out">AGOTADO</span>` : '';
     const imgSrc = it.foto ? `assets/images/postres/${it.foto}` : logoFallback;
-    const eager = i < 6 ? 'fetchpriority="high" loading="eager"' : 'loading="lazy"';
     return `
       <article class="card">
         <figure class="figure">
           <img class="thumb" src="${imgSrc}" alt="${escapeHtml(it.nombre)}"
-               ${eager} onerror="this.src='${logoFallback}'" />
+               loading="lazy" onerror="this.src='${logoFallback}'" />
           ${badge}
         </figure>
         <div class="body">
@@ -170,28 +206,7 @@ function renderCatalogProgressive(items){
         </div>
       </article>
     `;
-  };
-
-  // Limpia skeletons y renderiza primeras
-  els.grid.innerHTML = items.slice(0, FIRST_CHUNK).map(makeCard).join('');
-
-  // Resto en lotes para no bloquear el hilo
-  let i = FIRST_CHUNK;
-  const renderNext = () => {
-    if (i >= items.length) return;
-    const next = items.slice(i, i + NEXT_CHUNK).map((it, idx) => makeCard(it, i + idx)).join('');
-    const frag = document.createElement('template');
-    frag.innerHTML = next;
-    els.grid.appendChild(frag.content);
-    i += NEXT_CHUNK;
-    // Dejar respirar el main thread
-    if ('requestIdleCallback' in window) {
-      requestIdleCallback(renderNext, { timeout: 200 });
-    } else {
-      setTimeout(renderNext, 16);
-    }
-  };
-  renderNext();
+  }).join('');
 }
 
 // Click en “Agregar”
@@ -207,4 +222,109 @@ els.grid?.addEventListener('click', ev=>{
   updateCartSummary(); openCart();
 });
 
+// ======= Formulario dinámico =======
+els.fTipo?.addEventListener('change', ()=>{
+  const isDepto = els.fTipo.value === 'depto';
+  els.deptoExtra.hidden = !isDepto;
+});
+els.fRetiro?.addEventListener('change', ()=>{
+  const retiro = els.fRetiro.checked;
+  els.direccionBlock.hidden = retiro;
+  state.shipping = 0;
+  updateTotals();
+});
+
+// Pago → mostrar Alias/CBU + copiar
+els.fPago?.addEventListener('change', ()=>{
+  const show = els.fPago.value === 'transferencia';
+  els.transferBlock.hidden = !show;
+});
+document.addEventListener('click', (ev)=>{
+  const btn = ev.target.closest('[data-copy]'); if(!btn) return;
+  const sel = btn.getAttribute('data-copy');
+  const input = document.querySelector(sel);
+  if(!input) return;
+  input.select(); input.setSelectionRange(0, 99999);
+  try{ document.execCommand('copy'); els.copyStatus.textContent = 'Copiado ✅'; }
+  catch(_){ els.copyStatus.textContent = 'No se pudo copiar'; }
+  setTimeout(()=>{ els.copyStatus.textContent=''; }, 1500);
+});
+
+// ======= Envío por CP (CSV data/envio_zonas.csv) =======
+let ZONAS = null;
+async function loadZonas(){
+  try{
+    const res = await fetch('data/envio_zonas.csv', { cache:'no-store' });
+    const text = await res.text();
+    const parsed = Papa.parse(text.trim(), { header:true, skipEmptyLines:true });
+    ZONAS = parsed.data.map(r => ({
+      cp: String(r.CP||'').trim(),
+      envio: Number(String(r.Envio||'').replace(/[^\d.,]/g,'').replace(',','.')) || 0
+    }));
+  }catch(_){ ZONAS = []; }
+}
+loadZonas();
+
+['keyup','change'].forEach(evt=>{
+  els.fCP?.addEventListener(evt, ()=>{ calcShipping(); updateTotals(); });
+});
+
+function calcShipping(){
+  if(els.fRetiro.checked){ state.shipping = 0; return; }
+  const cp = String(els.fCP.value||'').trim();
+  if(!cp || !ZONAS || !ZONAS.length){ state.shipping = 0; return; }
+  const z = ZONAS.find(z => z.cp === cp);
+  state.shipping = z ? z.envio : 0;
+}
+
+function updateTotals(){
+  const subtotal = state.items.reduce((a,it)=>a+it.price*it.qty,0);
+  els.rSubtotal.textContent = money(subtotal);
+  els.rEnvio.textContent = money(state.shipping||0);
+  els.rTotal.textContent = money(subtotal + (state.shipping||0));
+}
+
+// ======= Enviar por WhatsApp =======
+els.orderForm?.addEventListener('submit', (e)=>{
+  e.preventDefault();
+  if(state.items.length===0) { alert('El carrito está vacío.'); return; }
+
+  const nombre = els.fNombre.value.trim();
+  const apellido = els.fApellido.value.trim();
+  const tel = els.fTelefono.value.trim();
+  const retiro = els.fRetiro.checked;
+
+  if(!nombre || !apellido || !tel){ alert('Completá nombre, apellido y teléfono.'); return; }
+
+  let direccion = 'Retiro en local';
+  if(!retiro){
+    const calle = els.fCalle.value.trim();
+    const cp = els.fCP.value.trim();
+    if(!calle || !cp){ alert('Completá calle y código postal.'); return; }
+    direccion = `${calle} (CP ${cp})`;
+    if(els.fTipo.value === 'depto'){
+      const piso = els.fPiso.value.trim(); const dpto = els.fDepto.value.trim();
+      if(piso) direccion += `, Piso ${piso}`;
+      if(dpto) direccion += `, Dpto ${dpto}`;
+    }
+  }
+
+  const pago = els.fPago.value;
+  const subtotal = state.items.reduce((a,it)=>a+it.price*it.qty,0);
+  const envio = state.shipping || 0;
+  const total = subtotal + envio;
+
+  const lista = state.items.map(it => `• ${it.name} x${it.qty} — $${(it.price*it.qty).toLocaleString('es-AR')}`).join('%0A');
+  let texto = `Hola Q'bocao! Quiero hacer este pedido:%0A%0A${lista}%0A%0ASubtotal: $${subtotal.toLocaleString('es-AR')}`;
+  texto += `%0AEnvío: $${envio.toLocaleString('es-AR')}`;
+  texto += `%0ATotal: $${total.toLocaleString('es-AR')}%0A%0A`;
+  texto += `Datos:%0A${nombre} ${apellido} — ${encodeURIComponent(tel)}%0A`;
+  texto += `Dirección: ${encodeURIComponent(direccion)}%0A`;
+  texto += `Pago: ${pago === 'transferencia' ? 'Transferencia' : 'Efectivo'}`;
+
+  const url = `https://wa.me/${encodeURIComponent(WHATS_NUMBER)}?text=${texto}`;
+  window.open(url, '_blank');
+});
+
+// Utilidad
 function escapeHtml(s=''){ return s.replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m])); }
