@@ -1,4 +1,4 @@
-// Q'bocao — Panel lateral + Catálogo dinámico (CSV/Sheets) + base de estado
+// Q'bocao — Panel lateral + Catálogo desde API Apps Script (JSON) + base de estado
 
 // Coordenadas de origen para envío (las tuyas)
 const ORIGIN = { lat: 34.6335848, lng: -58.5979308 };
@@ -56,38 +56,83 @@ function updateCartSummary() {
 }
 updateCartSummary();
 
-// ======= Catálogo dinámico (CSV/Sheets) =======
-const CATALOG_CSV_URL = (window.CATALOG_CSV_URL || 'data/catalogo.csv');
+// ======= Catálogo desde API (Apps Script JSON) =======
+// Estructura esperada:
+// { updated, count, productos: [{ id, nombre, descripcion, precio, imagen, disponible, agotado }] }
+const MENU_API_URL = window.MENU_API_URL;
+const CATALOG_CSV_URL = window.CATALOG_CSV_URL || 'data/catalogo.csv'; // fallback opcional
 
 async function loadCatalog() {
-  try {
-    const res = await fetch(CATALOG_CSV_URL, { cache: 'no-store' });
-    const text = await res.text();
-    const parsed = Papa.parse(text.trim(), { header: true, skipEmptyLines: true });
+  // 1) Intentar API JSON
+  if (MENU_API_URL) {
+    try {
+      const res = await fetch(MENU_API_URL, { cache: 'no-store' });
+      if (!res.ok) throw new Error('API no respondió OK');
+      const data = await res.json();
+      if (!data || !Array.isArray(data.productos)) throw new Error('Formato JSON inesperado');
 
-    // Esperamos columnas: Producto, Descripcion, Precio, Activo, Foto
-    let items = parsed.data.map(row => normalizeItem(row)).filter(it => it.nombre);
+      let items = data.productos.map(row => normalizeFromAPI(row)).filter(it => it.nombre);
 
-    // Disponibles primero
-    const disponibles = items.filter(i => i.activo);
-    const agotados = items.filter(i => !i.activo);
-    items = [...disponibles, ...agotados];
+      // Disponibles primero
+      const disponibles = items.filter(i => i.activo);
+      const agotados = items.filter(i => !i.activo);
+      items = [...disponibles, ...agotados];
 
-    renderCatalog(items);
-  } catch (err) {
-    console.error('Error cargando catálogo:', err);
-    els.grid.innerHTML = `<p class="muted">No se pudo cargar el catálogo. Verificá la URL del CSV.</p>`;
+      renderCatalog(items);
+      return;
+    } catch (err) {
+      console.error('Error API JSON:', err);
+      // si definiste CATALOG_CSV_URL, intentamos fallback CSV
+    }
   }
+
+  // 2) Fallback CSV (opcional)
+  if (CATALOG_CSV_URL) {
+    try {
+      const res = await fetch(CATALOG_CSV_URL, { cache: 'no-store' });
+      const text = await res.text();
+      const parsed = Papa.parse(text.trim(), { header: true, skipEmptyLines: true });
+
+      let items = parsed.data.map(row => normalizeFromCSV(row)).filter(it => it.nombre);
+
+      const disponibles = items.filter(i => i.activo);
+      const agotados = items.filter(i => !i.activo);
+      items = [...disponibles, ...agotados];
+
+      renderCatalog(items);
+      return;
+    } catch (err) {
+      console.error('Error CSV:', err);
+    }
+  }
+
+  // 3) Si nada cargó
+  els.grid.innerHTML = `<p class="muted">No se pudo cargar el catálogo. Verificá la URL de la API.</p>`;
 }
 
-function normalizeItem(row) {
+function normalizeFromAPI(row) {
+  // row: { id, nombre, descripcion, precio, imagen, disponible, agotado }
+  const precioNum = Number(row.precio) || 0;
+  return {
+    id: (row.id || '').toString(),
+    nombre: (row.nombre || '').toString().trim(),
+    descripcion: (row.descripcion || '').toString().trim(),
+    precio: precioNum,
+    activo: !!row.disponible && !row.agotado, // disponible=TRUE y no agotado
+    foto: (row.imagen || '').toString().trim() // nombre de archivo
+  };
+}
+
+function normalizeFromCSV(row) {
+  // Espera columnas: Producto, Descripcion, Precio, Activo, Foto
   const precioNum = toNumber(row.Precio);
   return {
+    id: (row.Producto || '').toString().trim().toLowerCase().replace(/\s+/g,'-'),
     nombre: (row.Producto || '').toString().trim(),
     descripcion: (row.Descripcion || '').toString().trim(),
     precio: isNaN(precioNum) ? 0 : precioNum,
     activo: ((row.Activo || '').toString().trim().toUpperCase() === 'SI'),
-    foto: (row.Foto || '').toString().trim() // nombre de archivo en assets/images/postres/
+    foto: (row.Foto || '').toString().trim()
   };
 }
 
@@ -121,17 +166,16 @@ function renderCatalog(items) {
           <p class="muted">${escapeHtml(it.descripcion)}</p>
           <div class="meta">
             <span class="price">$${(it.precio || 0).toLocaleString('es-AR')}</span>
-            <button class="btn btn-primary btn-add" data-name="${encodeURIComponent(it.nombre)}" ${disabled}>Agregar</button>
+            <button class="btn btn-primary btn-add" data-id="${encodeURIComponent(it.id)}" data-name="${encodeURIComponent(it.nombre)}" ${disabled}>Agregar</button>
           </div>
         </div>
       </article>
     `;
   }).join('');
 
-  // Próximo bloque: listeners para .btn-add (sumar al carrito)
+  // Aquí después agregamos listeners para .btn-add (sumar al carrito)
 }
 
-// Utilidad segura
 function escapeHtml(s='') {
   return s.replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
 }
