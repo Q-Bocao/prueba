@@ -9,14 +9,12 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 
-  <!-- PapaParse (quedará para fallback CSV si hiciera falta) -->
+  <!-- PapaParse (queda por si querés fallback CSV a futuro) -->
   <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 
-  <!-- CONFIG: URL de tu API (Apps Script /exec) -->
+  <!-- URL de tu API (Apps Script /exec) -->
   <script>
     window.MENU_API_URL = 'https://script.google.com/macros/s/AKfycbxzBrOTZ30YPhqcPWuFrbDNlX-vTekaFqPSiWXjmV2fC9iO4xvOTSOEzL-os-pA-EwW/exec';
-    // Opcional: fallback CSV si querés habilitarlo más adelante:
-    // window.CATALOG_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/XXXX/pub?gid=YYYY&single=true&output=csv';
   </script>
 
   <link rel="stylesheet" href="css/style.css" />
@@ -65,22 +63,26 @@
     </div>
   </header>
 
-  <!-- Hero -->
-  <section class="hero">
+  <!-- (Hero reducido a una banda fina con título, sin CTA) -->
+  <section class="hero hero--sm">
     <div class="hero-overlay"></div>
     <div class="container hero-content">
       <h1>Postres artesanales</h1>
       <p>Hechos con amor para endulzar tu día</p>
-      <a class="btn btn-primary" href="#catalogo">Ver catálogo</a>
     </div>
   </section>
 
-  <!-- Catálogo -->
+  <!-- Catálogo arriba de todo -->
   <main id="catalogo" class="container">
     <h2>Catálogo</h2>
     <div id="gridCatalogo" class="grid">
-      <!-- loader inicial -->
-      <p class="muted" id="catalogStatus">Cargando catálogo…</p>
+      <!-- skeletons mientras carga -->
+      <div class="card skeleton"><div class="sk-img"></div><div class="sk-lines"></div></div>
+      <div class="card skeleton"><div class="sk-img"></div><div class="sk-lines"></div></div>
+      <div class="card skeleton"><div class="sk-img"></div><div class="sk-lines"></div></div>
+      <div class="card skeleton"><div class="sk-img"></div><div class="sk-lines"></div></div>
+      <div class="card skeleton"><div class="sk-img"></div><div class="sk-lines"></div></div>
+      <div class="card skeleton"><div class="sk-img"></div><div class="sk-lines"></div></div>
     </div>
   </main>
 
@@ -90,7 +92,7 @@
       <div>
         <h4>Horario</h4>
         <p>Lunes a Sábados: 10:00–20:00</p>
-        <p id="openStatus" class="badge">Cargando…</p>
+        <p id="openStatus" class="badge">Abierto</p>
       </div>
       <div>
         <h4>Contacto</h4>
@@ -103,7 +105,7 @@
       </div>
     </div>
     <div class="container legal">
-      © 2025 Q'bocao. Todos los derechos reservados.
+      JUCA© 
     </div>
   </footer>
 
