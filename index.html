@@ -12,32 +12,122 @@
   <!-- Preconnect a tu API para bajar latencia -->
   <link rel="preconnect" href="https://script.google.com" crossorigin>
 
-  <!-- PapaParse (queda para fallback CSV si algún día lo usamos) -->
+  <!-- PapaParse -->
   <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 
   <!-- URL de tu API (Apps Script /exec) -->
   <script>
     window.MENU_API_URL = 'https://script.google.com/macros/s/AKfycbxzBrOTZ30YPhqcPWuFrbDNlX-vTekaFqPSiWXjmV2fC9iO4xvOTSOEzL-os-pA-EwW/exec';
+    // Número de WhatsApp destino
+    window.WHATS_NUMBER = '+5491154815519';
   </script>
 
   <link rel="stylesheet" href="css/style.css" />
 </head>
 <body>
-  <!-- Panel lateral (carrito) -->
+  <!-- Panel lateral (carrito + formulario) -->
   <aside id="cartPanel" aria-hidden="true">
     <header class="cart-header">
-      <h3>Tu pedido</h3>
+      <h3 id="panelTitle">Tu pedido</h3>
       <button class="cart-close" aria-label="Cerrar carrito">×</button>
     </header>
-    <div class="cart-body">
+
+    <!-- Paso 1: Carrito -->
+    <div class="cart-body" id="stepCart">
       <p class="muted">Tu carrito está vacío.</p>
     </div>
-    <footer class="cart-footer">
-      <div class="cart-row">
-        <span>Subtotal</span><strong>$0</strong>
-      </div>
-      <button class="btn btn-primary" disabled>Continuar</button>
+    <footer class="cart-footer" id="footerCart">
+      <div class="cart-row"><span>Subtotal</span><strong id="subtotalTxt">$0</strong></div>
+      <button class="btn btn-primary" id="btnToForm" disabled>Continuar</button>
     </footer>
+
+    <!-- Paso 2: Formulario -->
+    <div class="cart-body" id="stepForm" hidden>
+      <form id="orderForm" class="form-grid" autocomplete="on">
+        <h4>Datos del cliente</h4>
+        <div class="f-row">
+          <label>Nombre</label>
+          <input type="text" id="fNombre" placeholder="Nombre" required>
+        </div>
+        <div class="f-row">
+          <label>Apellido</label>
+          <input type="text" id="fApellido" placeholder="Apellido" required>
+        </div>
+        <div class="f-row">
+          <label>Teléfono</label>
+          <input type="tel" id="fTelefono" placeholder="+54 9 11..." required>
+        </div>
+
+        <div class="f-row f-check">
+          <input type="checkbox" id="fRetiro">
+          <label for="fRetiro">Retiro en local</label>
+        </div>
+
+        <div id="direccionBlock">
+          <h4>Dirección de entrega</h4>
+          <div class="f-row">
+            <label>Calle y número</label>
+            <input type="text" id="fCalle" placeholder="Ej: Av. Siempre Viva 742">
+          </div>
+          <div class="f-row">
+            <label>Código Postal</label>
+            <input type="text" id="fCP" placeholder="Ej: 1704">
+          </div>
+          <div class="f-row">
+            <label>Tipo de vivienda</label>
+            <select id="fTipo">
+              <option value="casa" selected>Casa</option>
+              <option value="depto">Departamento</option>
+            </select>
+          </div>
+          <div class="f-row two" id="deptoExtra" hidden>
+            <div>
+              <label>Piso</label>
+              <input type="text" id="fPiso" placeholder="Ej: 3">
+            </div>
+            <div>
+              <label>Nº Dpto</label>
+              <input type="text" id="fDepto" placeholder="Ej: B">
+            </div>
+          </div>
+        </div>
+
+        <h4>Pago</h4>
+        <div class="f-row">
+          <select id="fPago">
+            <option value="efectivo" selected>Efectivo</option>
+            <option value="transferencia">Transferencia</option>
+          </select>
+        </div>
+
+        <div id="transferBlock" class="transfer" hidden>
+          <div class="f-row">
+            <label>Alias</label>
+            <div class="copyline">
+              <input type="text" id="aliasTxt" value="ALIAS.EJEMPLO.QBOCAO" readonly>
+              <button type="button" class="btn" data-copy="#aliasTxt">Copiar</button>
+            </div>
+          </div>
+          <div class="f-row">
+            <label>CBU</label>
+            <div class="copyline">
+              <input type="text" id="cbuTxt" value="0000000000000000000000" readonly>
+              <button type="button" class="btn" data-copy="#cbuTxt">Copiar</button>
+            </div>
+          </div>
+          <p class="muted" id="copyStatus"></p>
+        </div>
+
+        <div class="resume">
+          <div class="cart-row"><span>Subtotal</span><strong id="rSubtotal">$0</strong></div>
+          <div class="cart-row"><span>Envío</span><strong id="rEnvio">$0</strong></div>
+          <div class="cart-row total"><span>Total</span><strong id="rTotal">$0</strong></div>
+        </div>
+
+        <button class="btn" type="button" id="btnBack">Volver</button>
+        <button class="btn btn-primary" type="submit" id="btnWhatsapp">Enviar por WhatsApp</button>
+      </form>
+    </div>
   </aside>
 
   <!-- Capa oscura -->
@@ -75,7 +165,7 @@
     </div>
   </section>
 
-  <!-- Catálogo arriba -->
+  <!-- Catálogo -->
   <main id="catalogo" class="container">
     <h2>Catálogo</h2>
     <div id="gridCatalogo" class="grid">
