@@ -1,4 +1,5 @@
-// Q'bocao — Carga instantánea (cache), timeout 1.5s, render progresivo, carrito + formulario diferido
+// Q'bocao — Catálogo ultra-rápido en móvil: caché agresivo + deadline 1.5s + render por tandas (scroll)
+// + Carrito + Formulario (CP→envío) + WhatsApp
 
 const ORIGIN = { lat: 34.6335848, lng: -58.5979308 };
 const MENU_API_URL = window.MENU_API_URL;
@@ -107,10 +108,8 @@ els.continueBtn?.addEventListener('click', ()=>{
   els.cartBody.hidden = true;
   els.footerCart.hidden = true;
   els.stepForm.hidden = false;
-  // resumen
   const subtotal = state.items.reduce((a,it)=>a+it.price*it.qty,0);
   els.rSubtotal.textContent = money(subtotal);
-  // cargar zonas SOLO ahora (diferido)
   ensureZonasLoaded().then(()=>{ calcShipping(); updateTotals(); });
 });
 
@@ -122,22 +121,39 @@ els.backBtn?.addEventListener('click', ()=>{
   els.footerCart.hidden = false;
 });
 
-// ======= Catálogo súper-rápido =======
-// Cache con control por 'updated' y deadline duro de 1500ms para la API
-const CACHE_KEY = 'qbocao_catalog_v4';
+// ======= Catálogo rápido (caché + deadline + tandas con scroll) =======
+const CACHE_KEY = 'qbocao_catalog_v5';
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 min
-const FIRST_EAGER = 6;
+const INITIAL_COUNT = 8;  // primeras cards visibles al instante
+const BATCH_COUNT   = 8;  // tamaño de cada tanda
+let _allItems = [];       // catálogo completo en memoria
+let _renderIndex = 0;     // índice hasta dónde se pintó
+let _sentinel;            // observador de scroll
 
 document.addEventListener('DOMContentLoaded', async ()=>{
+  // 1) Pintar desde caché (si existe) INMEDIATO
   const cached = getCache();
-  if (cached?.items?.length) renderCatalog(cached.items, true);
+  if (cached?.items?.length) {
+    _allItems = cached.items;
+    renderInitial();
+    setupInfiniteScroll();
+  }
 
+  // 2) Pedir a la API con deadline. Si llega algo nuevo, reemplaza dataset.
   const fresh = await fetchCatalogWithDeadline(1500);
   if (fresh && fresh.items?.length) {
     if (!cached || cached.updated !== fresh.updated) {
-      renderCatalog(fresh.items, false);
+      _allItems = fresh.items;
+      clearCatalog();
+      renderInitial();
+      setupInfiniteScroll();
       setCache(fresh.updated, fresh.items);
     }
+  }
+
+  // Si no había cache y tampoco llegó la API, mostramos mensaje mínimo
+  if (_allItems.length === 0) {
+    els.grid.innerHTML = `<p class="muted">No se pudo cargar el catálogo ahora. Probá recargar en unos segundos.</p>`;
   }
 });
 
@@ -186,14 +202,62 @@ function normalizeFromAPI(row){
     foto: String(row.imagen||'').trim()
   };
 }
-function renderCatalog(items, fromCache){
+
+// ---- Render por tandas con scroll ----
+function clearCatalog(){
+  els.grid.innerHTML = '';
+  _renderIndex = 0;
+  if (_sentinel) {
+    _sentinel.disconnect?.();
+    _sentinel = null;
+  }
+}
+function renderInitial(){
+  // pinta primeras N
+  const end = Math.min(INITIAL_COUNT, _allItems.length);
+  appendCards(_allItems.slice(0, end), 0);
+  _renderIndex = end;
+}
+function setupInfiniteScroll(){
+  if (_renderIndex >= _allItems.length) return; // nada más para cargar
+  const sentinelEl = document.createElement('div');
+  sentinelEl.style.height = '1px';
+  sentinelEl.id = 'catalog-sentinel';
+  els.grid.appendChild(sentinelEl);
+
+  const onIntersect = entries => {
+    for (const entry of entries) {
+      if (entry.isIntersecting) {
+        renderNextBatch();
+      }
+    }
+  };
+  _sentinel = new IntersectionObserver(onIntersect, { rootMargin: '1200px 0px' });
+  _sentinel.observe(sentinelEl);
+}
+function renderNextBatch(){
+  if (_renderIndex >= _allItems.length) return;
+  const start = _renderIndex;
+  const end = Math.min(_renderIndex + BATCH_COUNT, _allItems.length);
+  appendCards(_allItems.slice(start, end), start);
+  _renderIndex = end;
+
+  // si llegamos al final, dejamos de observar
+  if (_renderIndex >= _allItems.length) {
+    const s = document.getElementById('catalog-sentinel');
+    if (_sentinel && s) { _sentinel.unobserve(s); s.remove(); }
+  }
+}
+function appendCards(items, offsetIndex){
   const logoFallback = 'assets/images/logo.png';
-  els.grid.innerHTML = items.map((it, i)=>{
+  const tpl = document.createElement('template');
+  tpl.innerHTML = items.map((it, i)=>{
+    const idx = offsetIndex + i;
     const agotado = !it.activo;
     const disabled = agotado ? 'disabled' : '';
     const badge = agotado ? `<span class="badge-out">AGOTADO</span>` : '';
     const imgSrc = it.foto ? `assets/images/postres/${it.foto}` : logoFallback;
-    const eager = i < FIRST_EAGER ? 'fetchpriority="high" loading="eager"' : 'loading="lazy"';
+    const eager = idx < INITIAL_COUNT ? 'fetchpriority="high" loading="eager"' : 'loading="lazy"';
     return `
       <article class="card">
         <figure class="figure">
@@ -215,6 +279,7 @@ function renderCatalog(items, fromCache){
       </article>
     `;
   }).join('');
+  els.grid.appendChild(tpl.content);
 }
 
 // Click en “Agregar”
@@ -256,7 +321,7 @@ document.addEventListener('click', (ev)=>{
   setTimeout(()=>{ els.copyStatus.textContent=''; }, 1500);
 });
 
-// ======= Envío por CP (CSV) — CARGA DIFERIDA =======
+// ======= Envío por CP (CSV) — carga diferida =======
 let ZONAS = null, zonasLoading = false;
 async function ensureZonasLoaded(){
   if (ZONAS || zonasLoading) return;
@@ -272,7 +337,6 @@ async function ensureZonasLoaded(){
   }catch(_){ ZONAS = []; }
   zonasLoading = false;
 
-  // listeners recién ahora para no tocar la carga inicial
   ['keyup','change'].forEach(evt=>{
     els.fCP?.addEventListener(evt, ()=>{ calcShipping(); updateTotals(); });
   });
