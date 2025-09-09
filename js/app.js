@@ -1,6 +1,6 @@
-// Q'bocao — Panel lateral + Catálogo desde API Apps Script (JSON) + base de estado
+// Q'bocao — Catálogo desde API Apps Script (con diagnóstico) + panel lateral + estado base
 
-// Coordenadas de origen para envío (las tuyas)
+// Coordenadas de origen para envío (tuyas)
 const ORIGIN = { lat: 34.6335848, lng: -58.5979308 };
 
 // ======= UI: panel lateral (carrito) =======
@@ -9,7 +9,8 @@ const els = {
   backdrop: document.getElementById('backdrop'),
   openCart: document.getElementById('openCart'),
   closeCart: document.querySelector('#cartPanel .cart-close'),
-  grid: document.getElementById('gridCatalogo')
+  grid: document.getElementById('gridCatalogo'),
+  catalogStatus: document.getElementById('catalogStatus')
 };
 
 function openCart() {
@@ -56,24 +57,38 @@ function updateCartSummary() {
 }
 updateCartSummary();
 
-// ======= Catálogo desde API (Apps Script JSON) =======
-// Estructura esperada:
-// { updated, count, productos: [{ id, nombre, descripcion, precio, imagen, disponible, agotado }] }
+// ======= Catálogo desde API (con diagnóstico) =======
 const MENU_API_URL = window.MENU_API_URL;
-const CATALOG_CSV_URL = window.CATALOG_CSV_URL || 'data/catalogo.csv'; // fallback opcional
+const CATALOG_CSV_URL = window.CATALOG_CSV_URL || null; // fallback opcional
 
 async function loadCatalog() {
-  // 1) Intentar API JSON
+  // Limpia / loader
+  if (els.catalogStatus) els.catalogStatus.textContent = 'Cargando catálogo…';
+
+  // 1) Intentar API JSON con cache-busting
   if (MENU_API_URL) {
+    const url = MENU_API_URL + (MENU_API_URL.includes('?') ? '&' : '?') + 't=' + Date.now();
     try {
-      const res = await fetch(MENU_API_URL, { cache: 'no-store' });
-      if (!res.ok) throw new Error('API no respondió OK');
-      const data = await res.json();
-      if (!data || !Array.isArray(data.productos)) throw new Error('Formato JSON inesperado');
+      const res = await fetch(url, { cache: 'no-store' });
+      const raw = await res.text();
+
+      // Diagnóstico: si no es JSON válido, mostrar qué llegó
+      let data;
+      try {
+        data = JSON.parse(raw);
+      } catch (parseErr) {
+        console.error('Respuesta no-JSON de la API:', raw);
+        showError('La API respondió un formato no válido. Verificá que doGet() devuelva JSON.');
+        return;
+      }
+
+      if (!data || !Array.isArray(data.productos)) {
+        console.error('JSON inesperado:', data);
+        showError('La API no trae la propiedad "productos". Revisá el Apps Script.');
+        return;
+      }
 
       let items = data.productos.map(row => normalizeFromAPI(row)).filter(it => it.nombre);
-
-      // Disponibles primero
       const disponibles = items.filter(i => i.activo);
       const agotados = items.filter(i => !i.activo);
       items = [...disponibles, ...agotados];
@@ -81,8 +96,8 @@ async function loadCatalog() {
       renderCatalog(items);
       return;
     } catch (err) {
-      console.error('Error API JSON:', err);
-      // si definiste CATALOG_CSV_URL, intentamos fallback CSV
+      console.error('Error al llamar a la API:', err);
+      // seguir a fallback si existe
     }
   }
 
@@ -94,7 +109,6 @@ async function loadCatalog() {
       const parsed = Papa.parse(text.trim(), { header: true, skipEmptyLines: true });
 
       let items = parsed.data.map(row => normalizeFromCSV(row)).filter(it => it.nombre);
-
       const disponibles = items.filter(i => i.activo);
       const agotados = items.filter(i => !i.activo);
       items = [...disponibles, ...agotados];
@@ -107,18 +121,27 @@ async function loadCatalog() {
   }
 
   // 3) Si nada cargó
-  els.grid.innerHTML = `<p class="muted">No se pudo cargar el catálogo. Verificá la URL de la API.</p>`;
+  showError('No se pudo cargar el catálogo. Revisá la URL de la API o el fallback CSV.');
+}
+
+function showError(msg){
+  if (els.grid) {
+    els.grid.innerHTML = `<p class="muted">${msg}</p>`;
+  }
 }
 
 function normalizeFromAPI(row) {
   // row: { id, nombre, descripcion, precio, imagen, disponible, agotado }
   const precioNum = Number(row.precio) || 0;
+  // activo = disponible true y no agotado
+  const activo = !!row.disponible && !row.agotado;
+
   return {
     id: (row.id || '').toString(),
     nombre: (row.nombre || '').toString().trim(),
     descripcion: (row.descripcion || '').toString().trim(),
     precio: precioNum,
-    activo: !!row.disponible && !row.agotado, // disponible=TRUE y no agotado
+    activo,
     foto: (row.imagen || '').toString().trim() // nombre de archivo
   };
 }
@@ -148,6 +171,8 @@ function toNumber(v) {
 
 function renderCatalog(items) {
   const logoFallback = 'assets/images/logo.png';
+  if (els.catalogStatus) els.catalogStatus.remove();
+
   els.grid.innerHTML = items.map(it => {
     const agotado = !it.activo;
     const badge = agotado ? `<span class="badge-out">AGOTADO</span>` : '';
@@ -172,8 +197,6 @@ function renderCatalog(items) {
       </article>
     `;
   }).join('');
-
-  // Aquí después agregamos listeners para .btn-add (sumar al carrito)
 }
 
 function escapeHtml(s='') {
