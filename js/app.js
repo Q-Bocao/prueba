@@ -1,9 +1,10 @@
-// Q'bocao — Catálogo ultra-rápido en móvil: caché agresivo + deadline 1.5s + render por tandas (scroll)
-// + Carrito + Formulario (CP→envío) + WhatsApp
+// Q'bocao — Carga a prueba de todo: Cache → API (1.5s) → Semilla local
+// + Render por tandas en móvil + Carrito + Formulario + WhatsApp
 
 const ORIGIN = { lat: 34.6335848, lng: -58.5979308 };
-const MENU_API_URL = window.MENU_API_URL;
+const MENU_API_URL = window.MENU_API_URL;                  // tu Apps Script /exec
 const WHATS_NUMBER = window.WHATS_NUMBER || '+5491154815519';
+const SEED_URL = 'data/seed_catalog.json';                 // opcional (plan C)
 
 // ======= UI =======
 const els = {
@@ -121,17 +122,17 @@ els.backBtn?.addEventListener('click', ()=>{
   els.footerCart.hidden = false;
 });
 
-// ======= Catálogo rápido (caché + deadline + tandas con scroll) =======
-const CACHE_KEY = 'qbocao_catalog_v5';
+// ======= Catálogo robusto =======
+const CACHE_KEY = 'qbocao_catalog_v6';
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 min
-const INITIAL_COUNT = 8;  // primeras cards visibles al instante
-const BATCH_COUNT   = 8;  // tamaño de cada tanda
-let _allItems = [];       // catálogo completo en memoria
-let _renderIndex = 0;     // índice hasta dónde se pintó
-let _sentinel;            // observador de scroll
+const INITIAL_COUNT = 8;
+const BATCH_COUNT   = 8;
+let _allItems = [];
+let _renderIndex = 0;
+let _sentinel;
 
 document.addEventListener('DOMContentLoaded', async ()=>{
-  // 1) Pintar desde caché (si existe) INMEDIATO
+  // 1) Cache al toque
   const cached = getCache();
   if (cached?.items?.length) {
     _allItems = cached.items;
@@ -139,7 +140,7 @@ document.addEventListener('DOMContentLoaded', async ()=>{
     setupInfiniteScroll();
   }
 
-  // 2) Pedir a la API con deadline. Si llega algo nuevo, reemplaza dataset.
+  // 2) API con deadline 1.5s
   const fresh = await fetchCatalogWithDeadline(1500);
   if (fresh && fresh.items?.length) {
     if (!cached || cached.updated !== fresh.updated) {
@@ -148,12 +149,21 @@ document.addEventListener('DOMContentLoaded', async ()=>{
       renderInitial();
       setupInfiniteScroll();
       setCache(fresh.updated, fresh.items);
+      return; // listo
     }
   }
 
-  // Si no había cache y tampoco llegó la API, mostramos mensaje mínimo
+  // 3) Semilla local (si no hay cache ni API)
   if (_allItems.length === 0) {
-    els.grid.innerHTML = `<p class="muted">No se pudo cargar el catálogo ahora. Probá recargar en unos segundos.</p>`;
+    const seed = await fetchSeed();
+    if (seed && seed.items?.length) {
+      _allItems = seed.items;
+      clearCatalog();
+      renderInitial();
+      setupInfiniteScroll();
+    } else {
+      els.grid.innerHTML = `<p class="muted">No se pudo cargar el catálogo. Revisá la URL de la API o agrega <code>data/seed_catalog.json</code>.</p>`;
+    }
   }
 });
 
@@ -169,6 +179,7 @@ function getCache(){
 function setCache(updated, items){
   try{ localStorage.setItem(CACHE_KEY, JSON.stringify({ts:Date.now(), updated, items})); }catch(_){}
 }
+
 async function fetchCatalogWithDeadline(ms){
   if(!MENU_API_URL) return null;
   const ctrl = new AbortController();
@@ -189,6 +200,20 @@ async function fetchCatalogWithDeadline(ms){
     return null;
   }
 }
+async function fetchSeed(){
+  try{
+    const res = await fetch(SEED_URL, { cache:'no-store' });
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (!data || !Array.isArray(data.productos)) return null;
+    let items = data.productos.map(normalizeFromAPI).filter(x=>x.nombre);
+    const disponibles = items.filter(i=>i.activo);
+    const agotados = items.filter(i=>!i.activo);
+    items = [...disponibles, ...agotados];
+    return { updated: String(data.updated||''), items };
+  }catch(_){ return null; }
+}
+
 function normalizeFromAPI(row){
   const disp = (row.disponible===true) || String(row.disponible).toUpperCase()==='SI' || String(row.disponible).toLowerCase()==='true';
   const agot = (row.agotado===true) || String(row.agotado).toLowerCase()==='true';
@@ -207,31 +232,21 @@ function normalizeFromAPI(row){
 function clearCatalog(){
   els.grid.innerHTML = '';
   _renderIndex = 0;
-  if (_sentinel) {
-    _sentinel.disconnect?.();
-    _sentinel = null;
-  }
+  if (_sentinel) { _sentinel.disconnect?.(); _sentinel = null; }
 }
 function renderInitial(){
-  // pinta primeras N
   const end = Math.min(INITIAL_COUNT, _allItems.length);
   appendCards(_allItems.slice(0, end), 0);
   _renderIndex = end;
 }
 function setupInfiniteScroll(){
-  if (_renderIndex >= _allItems.length) return; // nada más para cargar
+  if (_renderIndex >= _allItems.length) return;
   const sentinelEl = document.createElement('div');
   sentinelEl.style.height = '1px';
   sentinelEl.id = 'catalog-sentinel';
   els.grid.appendChild(sentinelEl);
 
-  const onIntersect = entries => {
-    for (const entry of entries) {
-      if (entry.isIntersecting) {
-        renderNextBatch();
-      }
-    }
-  };
+  const onIntersect = entries => entries.forEach(e => { if (e.isIntersecting) renderNextBatch(); });
   _sentinel = new IntersectionObserver(onIntersect, { rootMargin: '1200px 0px' });
   _sentinel.observe(sentinelEl);
 }
@@ -241,8 +256,6 @@ function renderNextBatch(){
   const end = Math.min(_renderIndex + BATCH_COUNT, _allItems.length);
   appendCards(_allItems.slice(start, end), start);
   _renderIndex = end;
-
-  // si llegamos al final, dejamos de observar
   if (_renderIndex >= _allItems.length) {
     const s = document.getElementById('catalog-sentinel');
     if (_sentinel && s) { _sentinel.unobserve(s); s.remove(); }
@@ -296,32 +309,24 @@ els.grid?.addEventListener('click', ev=>{
 });
 
 // ======= Form dinámico =======
-els.fTipo?.addEventListener('change', ()=>{
-  const isDepto = els.fTipo.value === 'depto';
-  els.deptoExtra.hidden = !isDepto;
-});
+els.fTipo?.addEventListener('change', ()=>{ els.deptoExtra.hidden = (els.fTipo.value !== 'depto'); });
 els.fRetiro?.addEventListener('change', ()=>{
   const retiro = els.fRetiro.checked;
   els.direccionBlock.hidden = retiro;
-  state.shipping = 0;
-  updateTotals();
+  state.shipping = 0; updateTotals();
 });
-els.fPago?.addEventListener('change', ()=>{
-  const show = els.fPago.value === 'transferencia';
-  els.transferBlock.hidden = !show;
-});
+els.fPago?.addEventListener('change', ()=>{ els.transferBlock.hidden = (els.fPago.value !== 'transferencia'); });
 document.addEventListener('click', (ev)=>{
   const btn = ev.target.closest('[data-copy]'); if(!btn) return;
-  const sel = btn.getAttribute('data-copy');
-  const input = document.querySelector(sel);
+  const input = document.querySelector(btn.getAttribute('data-copy'));
   if(!input) return;
-  input.select(); input.setSelectionRange(0, 99999);
-  try{ document.execCommand('copy'); els.copyStatus.textContent = 'Copiado ✅'; }
-  catch(_){ els.copyStatus.textContent = 'No se pudo copiar'; }
+  input.select(); input.setSelectionRange(0,99999);
+  try{ document.execCommand('copy'); els.copyStatus.textContent='Copiado ✅'; }
+  catch(_){ els.copyStatus.textContent='No se pudo copiar'; }
   setTimeout(()=>{ els.copyStatus.textContent=''; }, 1500);
 });
 
-// ======= Envío por CP (CSV) — carga diferida =======
+// ======= Envío por CP (CSV) — diferido =======
 let ZONAS = null, zonasLoading = false;
 async function ensureZonasLoaded(){
   if (ZONAS || zonasLoading) return;
@@ -336,7 +341,6 @@ async function ensureZonasLoaded(){
     }));
   }catch(_){ ZONAS = []; }
   zonasLoading = false;
-
   ['keyup','change'].forEach(evt=>{
     els.fCP?.addEventListener(evt, ()=>{ calcShipping(); updateTotals(); });
   });
