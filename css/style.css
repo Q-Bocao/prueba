@@ -89,7 +89,7 @@ h2{font-size:1.6rem}
 .footer-grid{display:grid; gap:24px; grid-template-columns:1fr; padding:24px 0;}
 .legal{padding:12px 0; border-top:1px solid var(--line); color:var(--muted); font-size:.9rem}
 
-/* Panel lateral (carrito) */
+/* Panel lateral (carrito y formulario) */
 #cartPanel{position:fixed; top:0; right:-420px; width:360px; max-width:90vw; height:100%;
   background:var(--paper); box-shadow: -10px 0 30px rgba(0,0,0,.12);
   transition:right .3s ease; z-index:100; display:flex; flex-direction:column; border-left:1px solid var(--line);}
@@ -101,6 +101,18 @@ h2{font-size:1.6rem}
 .cart-body{flex:1; overflow:auto; padding:16px}
 .cart-footer{padding:16px; border-top:1px solid var(--line); display:grid; gap:12px}
 .cart-row{display:flex; align-items:center; justify-content:space-between}
+
+/* Formulario */
+.form-grid{display:grid; gap:12px}
+.f-row{display:grid; gap:6px}
+.f-row.two{grid-template-columns:1fr 1fr; gap:8px}
+.f-row input, .f-row select{border:1px solid var(--line); border-radius:10px; padding:.55rem .7rem; outline:none}
+.f-row input:focus, .f-row select:focus{border-color:#e2d6cc}
+.f-check{grid-auto-flow:column; align-items:center; grid-template-columns:auto 1fr}
+.copyline{display:grid; grid-template-columns:1fr auto; gap:6px}
+.transfer{border:1px dashed #e7d8cc; border-radius:12px; padding:10px}
+.resume{margin-top:4px; border-top:1px solid var(--line); padding-top:10px}
+.cart-row.total strong{font-size:1.1rem}
 
 /* Responsive */
 @media (max-width: 860px){
