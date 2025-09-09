@@ -5,9 +5,17 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Q'bocao — Postres artesanales</title>
 
-  <!-- Tipos elegantes: Serif para títulos, Sans para texto -->
+  <!-- Tipografías -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+
+  <!-- PapaParse para leer CSV -->
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+
+  <!-- URL del CSV de tu Google Sheet -->
+  <script>
+    window.CATALOG_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRvR8lUTM1DhnVqywz_nmFJ50Qd8FqBCgOqc2sBml5ZHt3h7LYDaC8CArYqldfYcDQp2K_kMJWqIbL4/pub?gid=2121361297&single=true&output=csv';
+  </script>
 
   <link rel="stylesheet" href="css/style.css" />
 </head>
@@ -19,7 +27,6 @@
       <button class="cart-close" aria-label="Cerrar carrito">×</button>
     </header>
     <div class="cart-body">
-      <!-- Aquí irá la lista editable del carrito -->
       <p class="muted">Tu carrito está vacío.</p>
     </div>
     <footer class="cart-footer">
@@ -30,7 +37,7 @@
     </footer>
   </aside>
 
-  <!-- Capa oscura detrás del panel -->
+  <!-- Capa oscura -->
   <div id="backdrop" aria-hidden="true"></div>
 
   <!-- Header / Navbar -->
@@ -56,7 +63,7 @@
     </div>
   </header>
 
-  <!-- Hero con foto de fondo -->
+  <!-- Hero con foto de fondo (usa assets/images/hero.jpg si existe) -->
   <section class="hero">
     <div class="hero-overlay"></div>
     <div class="container hero-content">
@@ -66,10 +73,10 @@
     </div>
   </section>
 
-  <!-- Catálogo: lo completamos en el próximo bloque -->
+  <!-- Catálogo -->
   <main id="catalogo" class="container">
     <h2>Catálogo</h2>
-    <p class="muted">Próximamente: grilla con disponibles arriba y agotados abajo.</p>
+    <div id="gridCatalogo" class="grid"></div>
   </main>
 
   <!-- Footer -->
