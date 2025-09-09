@@ -9,13 +9,13 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 
-  <!-- PapaParse (lo dejamos cargado por si querés fallback CSV más adelante) -->
+  <!-- PapaParse (quedará para fallback CSV si hiciera falta) -->
   <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 
   <!-- CONFIG: URL de tu API (Apps Script /exec) -->
   <script>
     window.MENU_API_URL = 'https://script.google.com/macros/s/AKfycbxzBrOTZ30YPhqcPWuFrbDNlX-vTekaFqPSiWXjmV2fC9iO4xvOTSOEzL-os-pA-EwW/exec';
-    // Si en el futuro querés fallback CSV, podés definir:
+    // Opcional: fallback CSV si querés habilitarlo más adelante:
     // window.CATALOG_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/XXXX/pub?gid=YYYY&single=true&output=csv';
   </script>
 
@@ -65,7 +65,7 @@
     </div>
   </header>
 
-  <!-- Hero (usa assets/images/hero.jpg si existe) -->
+  <!-- Hero -->
   <section class="hero">
     <div class="hero-overlay"></div>
     <div class="container hero-content">
@@ -78,7 +78,10 @@
   <!-- Catálogo -->
   <main id="catalogo" class="container">
     <h2>Catálogo</h2>
-    <div id="gridCatalogo" class="grid"></div>
+    <div id="gridCatalogo" class="grid">
+      <!-- loader inicial -->
+      <p class="muted" id="catalogStatus">Cargando catálogo…</p>
+    </div>
   </main>
 
   <!-- Footer -->
