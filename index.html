@@ -9,12 +9,14 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 
-  <!-- PapaParse para leer CSV -->
+  <!-- PapaParse (lo dejamos cargado por si querés fallback CSV más adelante) -->
   <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 
-  <!-- URL del CSV de tu Google Sheet -->
+  <!-- CONFIG: URL de tu API (Apps Script /exec) -->
   <script>
-    window.CATALOG_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRvR8lUTM1DhnVqywz_nmFJ50Qd8FqBCgOqc2sBml5ZHt3h7LYDaC8CArYqldfYcDQp2K_kMJWqIbL4/pub?gid=2121361297&single=true&output=csv';
+    window.MENU_API_URL = 'https://script.google.com/macros/s/AKfycbxzBrOTZ30YPhqcPWuFrbDNlX-vTekaFqPSiWXjmV2fC9iO4xvOTSOEzL-os-pA-EwW/exec';
+    // Si en el futuro querés fallback CSV, podés definir:
+    // window.CATALOG_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/XXXX/pub?gid=YYYY&single=true&output=csv';
   </script>
 
   <link rel="stylesheet" href="css/style.css" />
@@ -63,7 +65,7 @@
     </div>
   </header>
 
-  <!-- Hero con foto de fondo (usa assets/images/hero.jpg si existe) -->
+  <!-- Hero (usa assets/images/hero.jpg si existe) -->
   <section class="hero">
     <div class="hero-overlay"></div>
     <div class="container hero-content">
