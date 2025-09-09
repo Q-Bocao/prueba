@@ -1,1 +1,100 @@
-<!-- Q'bocao - index.html (vacío, listo para empezar) -->
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Q'bocao — Postres artesanales</title>
+
+  <!-- Tipos elegantes: Serif para títulos, Sans para texto -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <!-- Panel lateral (carrito) -->
+  <aside id="cartPanel" aria-hidden="true">
+    <header class="cart-header">
+      <h3>Tu pedido</h3>
+      <button class="cart-close" aria-label="Cerrar carrito">×</button>
+    </header>
+    <div class="cart-body">
+      <!-- Aquí irá la lista editable del carrito -->
+      <p class="muted">Tu carrito está vacío.</p>
+    </div>
+    <footer class="cart-footer">
+      <div class="cart-row">
+        <span>Subtotal</span><strong>$0</strong>
+      </div>
+      <button class="btn btn-primary" disabled>Continuar</button>
+    </footer>
+  </aside>
+
+  <!-- Capa oscura detrás del panel -->
+  <div id="backdrop" aria-hidden="true"></div>
+
+  <!-- Header / Navbar -->
+  <header class="site-header">
+    <div class="container nav">
+      <a class="brand" href="index.html">
+        <img src="assets/images/logo.png" alt="Q'bocao" />
+        <span>Q'bocao</span>
+      </a>
+
+      <nav class="menu">
+        <a href="index.html">Inicio</a>
+        <a href="pages/nosotros.html">Nosotros</a>
+        <a href="pages/ubicaciones.html">Ubicaciones</a>
+        <a href="pages/contacto.html">Contacto</a>
+        <a href="pages/faq.html">FAQ</a>
+      </nav>
+
+      <div class="actions">
+        <button class="btn icon" id="openCart" aria-label="Abrir carrito">🛒</button>
+        <button class="btn burger" id="openMenu" aria-label="Abrir menú">☰</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Hero con foto de fondo -->
+  <section class="hero">
+    <div class="hero-overlay"></div>
+    <div class="container hero-content">
+      <h1>Postres artesanales</h1>
+      <p>Hechos con amor para endulzar tu día</p>
+      <a class="btn btn-primary" href="#catalogo">Ver catálogo</a>
+    </div>
+  </section>
+
+  <!-- Catálogo: lo completamos en el próximo bloque -->
+  <main id="catalogo" class="container">
+    <h2>Catálogo</h2>
+    <p class="muted">Próximamente: grilla con disponibles arriba y agotados abajo.</p>
+  </main>
+
+  <!-- Footer -->
+  <footer class="site-footer">
+    <div class="container footer-grid">
+      <div>
+        <h4>Horario</h4>
+        <p>Lunes a Sábados: 10:00–20:00</p>
+        <p id="openStatus" class="badge">Cargando…</p>
+      </div>
+      <div>
+        <h4>Contacto</h4>
+        <p>WhatsApp: próximamente</p>
+        <p>Instagram | Facebook</p>
+      </div>
+      <div>
+        <h4>Q'bocao</h4>
+        <p>Postres de autor, frescos y deliciosos.</p>
+      </div>
+    </div>
+    <div class="container legal">
+      © 2025 Q'bocao. Todos los derechos reservados.
+    </div>
+  </footer>
+
+  <script src="js/app.js"></script>
+</body>
+</html>
