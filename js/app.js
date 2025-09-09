@@ -1,4 +1,4 @@
-// Q'bocao — Catálogo rápido + Carrito + Formulario con CP → costo envío + WhatsApp
+// Q'bocao — Carga instantánea (cache), timeout 1.5s, render progresivo, carrito + formulario diferido
 
 const ORIGIN = { lat: 34.6335848, lng: -58.5979308 };
 const MENU_API_URL = window.MENU_API_URL;
@@ -44,7 +44,6 @@ const els = {
 
 function openCart(){ els.cartPanel.setAttribute('aria-hidden','false'); els.backdrop.setAttribute('aria-hidden','false'); document.body.style.overflow='hidden'; }
 function closeCart(){ els.cartPanel.setAttribute('aria-hidden','true'); els.backdrop.setAttribute('aria-hidden','true'); document.body.style.overflow=''; }
-
 els.openCart?.addEventListener('click', openCart);
 els.closeCart?.addEventListener('click', closeCart);
 els.backdrop?.addEventListener('click', closeCart);
@@ -108,11 +107,11 @@ els.continueBtn?.addEventListener('click', ()=>{
   els.cartBody.hidden = true;
   els.footerCart.hidden = true;
   els.stepForm.hidden = false;
-  // setear resumen
+  // resumen
   const subtotal = state.items.reduce((a,it)=>a+it.price*it.qty,0);
   els.rSubtotal.textContent = money(subtotal);
-  calcShipping(); // inicializa envío (puede ser 0 si no hay CP)
-  updateTotals();
+  // cargar zonas SOLO ahora (diferido)
+  ensureZonasLoaded().then(()=>{ calcShipping(); updateTotals(); });
 });
 
 // Volver al carrito
@@ -123,17 +122,22 @@ els.backBtn?.addEventListener('click', ()=>{
   els.footerCart.hidden = false;
 });
 
-// ======= Catálogo (con caché) =======
-const CACHE_KEY = 'qbocao_catalog_v3';
-const CACHE_TTL_MS = 5 * 60 * 1000;
+// ======= Catálogo súper-rápido =======
+// Cache con control por 'updated' y deadline duro de 1500ms para la API
+const CACHE_KEY = 'qbocao_catalog_v4';
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 min
+const FIRST_EAGER = 6;
 
 document.addEventListener('DOMContentLoaded', async ()=>{
   const cached = getCache();
   if (cached?.items?.length) renderCatalog(cached.items, true);
-  const fresh = await fetchCatalog();
-  if (fresh && (!cached || cached.updated !== fresh.updated)) {
-    renderCatalog(fresh.items, false);
-    setCache(fresh.updated, fresh.items);
+
+  const fresh = await fetchCatalogWithDeadline(1500);
+  if (fresh && fresh.items?.length) {
+    if (!cached || cached.updated !== fresh.updated) {
+      renderCatalog(fresh.items, false);
+      setCache(fresh.updated, fresh.items);
+    }
   }
 });
 
@@ -149,22 +153,26 @@ function getCache(){
 function setCache(updated, items){
   try{ localStorage.setItem(CACHE_KEY, JSON.stringify({ts:Date.now(), updated, items})); }catch(_){}
 }
-
-async function fetchCatalog(){
+async function fetchCatalogWithDeadline(ms){
   if(!MENU_API_URL) return null;
+  const ctrl = new AbortController();
+  const t = setTimeout(()=>ctrl.abort(), ms);
   try{
-    const res = await fetch(MENU_API_URL);
+    const res = await fetch(MENU_API_URL, { signal: ctrl.signal });
     const raw = await res.text();
-    let data; try{ data = JSON.parse(raw); } catch(e){ console.error('API no-JSON', raw); return null; }
-    if(!data || !Array.isArray(data.productos)) { console.error('JSON inesperado', data); return null; }
+    clearTimeout(t);
+    let data; try{ data = JSON.parse(raw); } catch(e){ console.warn('API no-JSON', raw); return null; }
+    if(!data || !Array.isArray(data.productos)) { console.warn('JSON inesperado', data); return null; }
     let items = data.productos.map(normalizeFromAPI).filter(x=>x.nombre);
     const disponibles = items.filter(i=>i.activo);
     const agotados = items.filter(i=>!i.activo);
     items = [...disponibles, ...agotados];
     return { updated: String(data.updated||''), items };
-  }catch(e){ console.warn('fetchCatalog err', e); return null; }
+  }catch(e){
+    console.warn('fetchCatalog timeout/err', e);
+    return null;
+  }
 }
-
 function normalizeFromAPI(row){
   const disp = (row.disponible===true) || String(row.disponible).toUpperCase()==='SI' || String(row.disponible).toLowerCase()==='true';
   const agot = (row.agotado===true) || String(row.agotado).toLowerCase()==='true';
@@ -178,19 +186,19 @@ function normalizeFromAPI(row){
     foto: String(row.imagen||'').trim()
   };
 }
-
-function renderCatalog(items){
+function renderCatalog(items, fromCache){
   const logoFallback = 'assets/images/logo.png';
-  els.grid.innerHTML = items.map(it=>{
+  els.grid.innerHTML = items.map((it, i)=>{
     const agotado = !it.activo;
     const disabled = agotado ? 'disabled' : '';
     const badge = agotado ? `<span class="badge-out">AGOTADO</span>` : '';
     const imgSrc = it.foto ? `assets/images/postres/${it.foto}` : logoFallback;
+    const eager = i < FIRST_EAGER ? 'fetchpriority="high" loading="eager"' : 'loading="lazy"';
     return `
       <article class="card">
         <figure class="figure">
           <img class="thumb" src="${imgSrc}" alt="${escapeHtml(it.nombre)}"
-               loading="lazy" onerror="this.src='${logoFallback}'" />
+               ${eager} onerror="this.src='${logoFallback}'" />
           ${badge}
         </figure>
         <div class="body">
@@ -222,7 +230,7 @@ els.grid?.addEventListener('click', ev=>{
   updateCartSummary(); openCart();
 });
 
-// ======= Formulario dinámico =======
+// ======= Form dinámico =======
 els.fTipo?.addEventListener('change', ()=>{
   const isDepto = els.fTipo.value === 'depto';
   els.deptoExtra.hidden = !isDepto;
@@ -233,8 +241,6 @@ els.fRetiro?.addEventListener('change', ()=>{
   state.shipping = 0;
   updateTotals();
 });
-
-// Pago → mostrar Alias/CBU + copiar
 els.fPago?.addEventListener('change', ()=>{
   const show = els.fPago.value === 'transferencia';
   els.transferBlock.hidden = !show;
@@ -250,9 +256,11 @@ document.addEventListener('click', (ev)=>{
   setTimeout(()=>{ els.copyStatus.textContent=''; }, 1500);
 });
 
-// ======= Envío por CP (CSV data/envio_zonas.csv) =======
-let ZONAS = null;
-async function loadZonas(){
+// ======= Envío por CP (CSV) — CARGA DIFERIDA =======
+let ZONAS = null, zonasLoading = false;
+async function ensureZonasLoaded(){
+  if (ZONAS || zonasLoading) return;
+  zonasLoading = true;
   try{
     const res = await fetch('data/envio_zonas.csv', { cache:'no-store' });
     const text = await res.text();
@@ -262,13 +270,13 @@ async function loadZonas(){
       envio: Number(String(r.Envio||'').replace(/[^\d.,]/g,'').replace(',','.')) || 0
     }));
   }catch(_){ ZONAS = []; }
+  zonasLoading = false;
+
+  // listeners recién ahora para no tocar la carga inicial
+  ['keyup','change'].forEach(evt=>{
+    els.fCP?.addEventListener(evt, ()=>{ calcShipping(); updateTotals(); });
+  });
 }
-loadZonas();
-
-['keyup','change'].forEach(evt=>{
-  els.fCP?.addEventListener(evt, ()=>{ calcShipping(); updateTotals(); });
-});
-
 function calcShipping(){
   if(els.fRetiro.checked){ state.shipping = 0; return; }
   const cp = String(els.fCP.value||'').trim();
@@ -276,7 +284,6 @@ function calcShipping(){
   const z = ZONAS.find(z => z.cp === cp);
   state.shipping = z ? z.envio : 0;
 }
-
 function updateTotals(){
   const subtotal = state.items.reduce((a,it)=>a+it.price*it.qty,0);
   els.rSubtotal.textContent = money(subtotal);
@@ -284,7 +291,7 @@ function updateTotals(){
   els.rTotal.textContent = money(subtotal + (state.shipping||0));
 }
 
-// ======= Enviar por WhatsApp =======
+// ======= WhatsApp =======
 els.orderForm?.addEventListener('submit', (e)=>{
   e.preventDefault();
   if(state.items.length===0) { alert('El carrito está vacío.'); return; }
@@ -318,7 +325,7 @@ els.orderForm?.addEventListener('submit', (e)=>{
   let texto = `Hola Q'bocao! Quiero hacer este pedido:%0A%0A${lista}%0A%0ASubtotal: $${subtotal.toLocaleString('es-AR')}`;
   texto += `%0AEnvío: $${envio.toLocaleString('es-AR')}`;
   texto += `%0ATotal: $${total.toLocaleString('es-AR')}%0A%0A`;
-  texto += `Datos:%0A${nombre} ${apellido} — ${encodeURIComponent(tel)}%0A`;
+  texto += `Datos:%0A${encodeURIComponent(nombre)} ${encodeURIComponent(apellido)} — ${encodeURIComponent(tel)}%0A`;
   texto += `Dirección: ${encodeURIComponent(direccion)}%0A`;
   texto += `Pago: ${pago === 'transferencia' ? 'Transferencia' : 'Efectivo'}`;
 
