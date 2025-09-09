@@ -9,7 +9,10 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 
-  <!-- PapaParse (queda por si querés fallback CSV a futuro) -->
+  <!-- Preconnect a tu API para bajar latencia -->
+  <link rel="preconnect" href="https://script.google.com" crossorigin>
+
+  <!-- PapaParse (queda para fallback CSV si algún día lo usamos) -->
   <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 
   <!-- URL de tu API (Apps Script /exec) -->
@@ -63,7 +66,7 @@
     </div>
   </header>
 
-  <!-- (Hero reducido a una banda fina con título, sin CTA) -->
+  <!-- Hero reducido -->
   <section class="hero hero--sm">
     <div class="hero-overlay"></div>
     <div class="container hero-content">
@@ -72,7 +75,7 @@
     </div>
   </section>
 
-  <!-- Catálogo arriba de todo -->
+  <!-- Catálogo arriba -->
   <main id="catalogo" class="container">
     <h2>Catálogo</h2>
     <div id="gridCatalogo" class="grid">
@@ -105,7 +108,7 @@
       </div>
     </div>
     <div class="container legal">
-      JUCA© 
+      © 2025 Q'bocao. Todos los derechos reservados.
     </div>
   </footer>
 
